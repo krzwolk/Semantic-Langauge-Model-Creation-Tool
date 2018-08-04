@@ -1,0 +1,120 @@
+#! /usr/bin/env python
+from multiprocessing import Pool
+from os import getpid
+from numpy import fromfile
+from nltk.util import ngrams
+from sklearn.metrics.pairwise import cosine_similarity
+from morfeusz2 import Morfeusz
+from os import listdir, remove, getpid
+import re
+import codecs
+from sys import argv, exit
+
+def get_pid(line):
+	f = open('%i.%s' % (getpid(), 'cpart'), mode='a')
+	f.write(line)
+	f.close()
+
+def get_form_similarity(form, form_test):
+	similarity = 0
+	l = min(len(form), len(form_test))
+	for n_feature in xrange(0, l):
+		if form[n_feature] == form_test[n_feature]:
+			similarity += 1
+	return similarity / l
+
+def find_syns(word, index, form):
+	dists = [] # vector of dists between each word and the current word
+	syns = [] # vector of synonyms
+	for i in xrange(0, len(svdMat)):
+		if index != i:
+			dists.append(cosine_similarity(svdMat[index].reshape(1,-1), svdMat[i].reshape(1,-1)))
+		else:
+			dists.append(-1)
+	for i in xrange(0, 2):
+		index_of_max = dists.index(max(dists))
+		dists[index_of_max] = -1
+		full_desc = morph.generate(dictionary[index_of_max])
+		if 'ign' == full_desc[0][2]: # if morph does not contain the word
+			continue
+		form_similarities = []
+		for form_test in full_desc:
+			form_similarities.append(get_form_similarity(form, form_test))
+		index_of_best_form = form_similarities.index(max(form_similarities))
+		syns.append(full_desc[index_of_best_form][0])
+	#print syns
+	return syns	
+	
+def generate_from_line(raw_line):
+	sentence = re.split('\W+', raw_line.lower(), flags=re.UNICODE)
+	ngrams2file = []
+	for ngram_tuple in ngrams(sentence, min(len(sentence[:-1]), max_n)): # [:-1] because sentence has empty word as the last element
+		ngram = list(ngram_tuple)
+		ngrams2file.append(ngram) # initial form of ngram
+		for c in xrange(0, len(ngram)):	# step by word in ngram
+			w_desc = morph.analyse(ngram[c])
+			if len(w_desc) > 0:
+				init_form = w_desc[0][2][1].split(':')[0]
+				#print 'init_form: ', type(init_form)
+				try:
+					 index = dictionary.index(init_form) # + u'\n'
+					 #print 'index: ', index
+					 syns = find_syns(init_form, index, w_desc[0][2][2].split(':'))
+					 #print 'syns: '
+					 for syn in syns:
+					 	ngram2file = ngram[:]
+					 	#print(syn)
+						ngram2file[c] = syn
+						ngrams2file.append(ngram2file) #u' '.join(ngram2file)
+						#print 'n ', ngrams2file[-1]
+				except ValueError:
+					#print 'Word not in dictionary'
+					continue
+	generated = open('%i.%s' % (getpid(), 'cpart'), mode='a')
+	for ngram2file2 in ngrams2file:
+		generated.write(u' '.join(ngram2file2).encode('utf8') + '\n')
+	generated.close()
+
+
+corpus_filename = 'pl.txt'
+try:
+	filename = argv[1]
+	if filename in listdir('.'):
+		corpus_filename = filename
+	else:
+		print ('File %s not found in the current directory' % filename)
+		exit(-1)
+except IndexError:
+	pass
+
+max_n = 3
+morph = Morfeusz()
+	
+#load data
+dictionary = []
+f = codecs.open('dict.txt', encoding='utf-8')
+dictionary = f.readlines()
+f.close()
+for term_n in xrange(0, len(dictionary)):
+	dictionary[term_n] = dictionary[term_n][:-1]
+
+svdMat = fromfile('svdMat.svd')
+svdMat = svdMat.reshape(len(dictionary),svdMat.shape[0] / len(dictionary))
+
+	
+
+# remove previous result
+if 'generated_with_lsa.txt' in listdir('.'):
+		remove('generated_with_lsa.txt')
+		
+f = codecs.open(corpus_filename, encoding='utf-8')
+pool = Pool(processes = 16)              # process per core
+pool.map(generate_from_line, f.readlines())
+f.close()
+
+# main cycle
+
+	
+	
+f.close()
+
